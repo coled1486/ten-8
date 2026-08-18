@@ -553,6 +553,12 @@
         <div id="qa-results"></div>
       </div>
 
+      <div class="card" id="nixCard" style="display:none;">
+        <div class="field"><label>Describe a Meal</label><input type="text" id="nix-query" placeholder="e.g. 2 eggs, a slice of toast, and a banana" autocomplete="off" /></div>
+        <button class="btn btn-ghost btn-block" id="nixParseBtn">Parse Meal</button>
+        <div id="nix-results"></div>
+      </div>
+
       <h2 class="section-title"><span id="mealFormTitle">Log a Meal</span><span class="rule"></span></h2>
       <div class="card">
         <div class="field"><label>Meal / Food</label><input type="text" id="m-name" placeholder="e.g. Chicken, rice, broccoli" /></div>
@@ -788,6 +794,27 @@
         <div class="field"><label>Anthropic API Key</label><input type="password" id="apiKeyInput" placeholder="sk-ant-…" autocomplete="off" /></div>
         <div class="field"><label>Model ID</label><input type="text" id="apiModelInput" placeholder="e.g. claude-sonnet-4-5" /></div>
         <button class="btn btn-ghost btn-block" id="saveApiKeyBtn">Save Key</button>
+      </div>
+
+      <h2 class="section-title"><span>Additional Food Databases</span><span class="rule"></span></h2>
+      <div class="card">
+        <p class="modal-note">Optional — Quick Add always searches the local database and Open Food Facts
+          for free with no setup. Adding your own free keys below expands live search to two more sources.
+          Both are called directly from your browser, same as the Anthropic key above — stored only in this
+          browser's local storage, sent only to that provider.</p>
+        <p class="modal-note"><b>USDA FoodData Central</b> — the U.S. government's food database. Strongest
+          for generic/whole foods, no barcode support. Free key, no cost ever:
+          <a href="https://fdc.nal.usda.gov/api-key-signup/" target="_blank" rel="noopener">fdc.nal.usda.gov/api-key-signup</a>.</p>
+        <div class="field"><label>USDA API Key</label><input type="password" id="usdaKeyInput" placeholder="DEMO_KEY or your own key" autocomplete="off" /></div>
+        <p class="modal-note" style="margin-top:14px;"><b>Nutritionix</b> — lets you type a whole meal as a
+          sentence (e.g. "2 eggs and a slice of toast") and get itemized macros back. Free tier is capped and
+          meant for light personal use, not heavy daily traffic. Get keys at
+          <a href="https://developer.nutritionix.com/signup" target="_blank" rel="noopener">developer.nutritionix.com</a>.</p>
+        <div class="grid-2">
+          <div class="field"><label>Nutritionix App ID</label><input type="text" id="nixAppIdInput" autocomplete="off" /></div>
+          <div class="field"><label>Nutritionix App Key</label><input type="password" id="nixAppKeyInput" autocomplete="off" /></div>
+        </div>
+        <button class="btn btn-ghost btn-block" id="saveFoodDbKeysBtn">Save Database Keys</button>
       </div>
 
       <h2 class="section-title"><span>Custom Foods</span><span class="rule"></span></h2>
@@ -1200,6 +1227,9 @@
       if(!state.profile.personal) state.profile.personal = {};
       if(state.profile.apiKey===undefined) state.profile.apiKey = '';
       if(state.profile.apiModel===undefined) state.profile.apiModel = '';
+      if(state.profile.usdaApiKey===undefined) state.profile.usdaApiKey = '';
+      if(state.profile.nixAppId===undefined) state.profile.nixAppId = '';
+      if(state.profile.nixAppKey===undefined) state.profile.nixAppKey = '';
     }catch(e){}
     try{
       var cf = localStorage.getItem('custom-foods');
@@ -1502,6 +1532,9 @@
 
     document.getElementById('apiKeyInput').value = state.profile.apiKey || '';
     document.getElementById('apiModelInput').value = state.profile.apiModel || '';
+    document.getElementById('usdaKeyInput').value = state.profile.usdaApiKey || '';
+    document.getElementById('nixAppIdInput').value = state.profile.nixAppId || '';
+    document.getElementById('nixAppKeyInput').value = state.profile.nixAppKey || '';
     renderCustomFoodsCard();
     renderSuppManageCard();
     renderTemplateEditor();
@@ -1974,6 +2007,7 @@
       return '<button class="day-chip'+(c===qaActiveCat?' active':'')+'" data-qacat="'+escapeHtml(c)+'">'+escapeHtml(c)+'</button>';
     }).join('');
     renderQaResults(document.getElementById('qa-search').value);
+    document.getElementById('nixCard').style.display = (state.profile.nixAppId && state.profile.nixAppKey) ? 'block' : 'none';
   }
 
   function qaLocalMatches(q){
@@ -1992,7 +2026,7 @@
   }
 
   function qaResultHtml(f){
-    var tag = f._src==='CUSTOM' ? '<span class="qa-src-tag">MINE</span>' : f._src==='OFF' ? '<span class="qa-src-tag">LIVE</span>' : '';
+    var tag = f._src==='CUSTOM' ? '<span class="qa-src-tag">MINE</span>' : f._src==='OFF' ? '<span class="qa-src-tag">LIVE</span>' : f._src==='USDA' ? '<span class="qa-src-tag">USDA</span>' : '';
     return '<div class="qa-result" data-qafood=\''+encodeURIComponent(JSON.stringify(f))+'\'>'+
       '<div><div class="qr-name">'+escapeHtml(f.name)+tag+'</div><div class="qr-sub">'+escapeHtml(f.serving)+'</div></div>'+
       '<div class="qr-cal">'+Math.round(f.cal)+' kcal</div>'+
@@ -2030,7 +2064,53 @@
         var le = document.getElementById('qaLiveLoading');
         if(le) le.textContent = 'Live lookup unavailable — showing local results only.';
       }
+
+      if(state.profile.usdaApiKey){
+        wrap.insertAdjacentHTML('beforeend', '<div class="qa-loading" id="qaUsdaLoading">Searching USDA database…</div>');
+        try{
+          var usdaResults = await fetchUSDA(q.trim());
+          var usdaLoadingEl = document.getElementById('qaUsdaLoading');
+          if(usdaLoadingEl) usdaLoadingEl.remove();
+          if(document.getElementById('qa-search').value.trim() !== q.trim()) return;
+          if(usdaResults.length){
+            wrap.insertAdjacentHTML('beforeend', '<div class="empty-note" style="padding:6px 4px;text-align:left;">USDA Database Results</div>');
+            wrap.insertAdjacentHTML('beforeend', usdaResults.map(qaResultHtml).join(''));
+            attachQaClickHandlers();
+          }
+        }catch(e){
+          var ule = document.getElementById('qaUsdaLoading');
+          if(ule) ule.textContent = 'USDA lookup unavailable right now.';
+        }
+      }
     }
+  }
+
+  // Nutrient IDs are stable across FoodData Central's data types (Foundation,
+  // SR Legacy, Survey/FNDDS, Branded) — see their nutrient reference table.
+  var USDA_NUTRIENT_IDS = { cal:1008, p:1003, c:1005, f:1004, fib:1079, sug:2000, sod:1093 };
+  async function fetchUSDA(query){
+    var key = state.profile.usdaApiKey || 'DEMO_KEY';
+    var url = 'https://api.nal.usda.gov/fdc/v1/foods/search?api_key='+encodeURIComponent(key)+
+      '&query='+encodeURIComponent(query)+'&pageSize=10';
+    var res = await fetch(url);
+    if(!res.ok) throw new Error('network');
+    var data = await res.json();
+    return (data.foods||[]).map(function(food){
+      var vals = {};
+      (food.foodNutrients||[]).forEach(function(n){
+        Object.keys(USDA_NUTRIENT_IDS).forEach(function(k){
+          if(n.nutrientId===USDA_NUTRIENT_IDS[k]) vals[k] = n.value;
+        });
+      });
+      if(!vals.cal) return null;
+      return {
+        name: food.brandOwner ? (food.description+' ('+food.brandOwner+')') : food.description,
+        serving: '100 g', cal: Math.round(vals.cal||0),
+        p: Math.round((vals.p||0)*10)/10, c: Math.round((vals.c||0)*10)/10, f: Math.round((vals.f||0)*10)/10,
+        fib: Math.round((vals.fib||0)*10)/10, sug: Math.round((vals.sug||0)*10)/10, sod: Math.round(vals.sod||0),
+        _src:'USDA'
+      };
+    }).filter(Boolean);
   }
 
   async function fetchOpenFoodFacts(query){
@@ -2053,6 +2133,81 @@
       return { name: p.brands ? (p.product_name+' ('+p.brands+')') : p.product_name, cat:'Live', serving: per100 ? '100 g' : (p.serving_size||'1 serving'), cal: Math.round(cal), p: Math.round(pro*10)/10, c: Math.round(carb*10)/10, f: Math.round(fat*10)/10, fib: Math.round(fib*10)/10, sug: Math.round(sug*10)/10, sod: Math.round(sodG*1000), _src:'OFF' };
     }).filter(function(f){ return f.cal>0; });
   }
+
+  // ---------------- Nutritionix: natural-language meal parsing ----------------
+  async function fetchNutritionix(text){
+    var res = await fetch('https://trackapi.nutritionix.com/v2/natural/nutrients', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-app-id': state.profile.nixAppId,
+        'x-app-key': state.profile.nixAppKey,
+        'x-remote-user-id': '0'
+      },
+      body: JSON.stringify({ query: text })
+    });
+    if(!res.ok){
+      var errText = await res.text().catch(function(){ return ''; });
+      throw new Error('Nutritionix error '+res.status+(errText ? ' — '+errText.slice(0,140) : ''));
+    }
+    var data = await res.json();
+    return (data.foods||[]).map(function(f){
+      var qty = f.serving_qty ? (f.serving_qty+' '+(f.serving_unit||'')) : '1 serving';
+      return {
+        name: f.food_name ? (f.food_name.charAt(0).toUpperCase()+f.food_name.slice(1)) : 'Item',
+        serving: qty.trim(), cal: Math.round(f.nf_calories||0),
+        p: Math.round((f.nf_protein||0)*10)/10, c: Math.round((f.nf_total_carbohydrate||0)*10)/10, f: Math.round((f.nf_total_fat||0)*10)/10,
+        fib: Math.round((f.nf_dietary_fiber||0)*10)/10, sug: Math.round((f.nf_sugars||0)*10)/10, sod: Math.round(f.nf_sodium||0),
+        _src:'NIX'
+      };
+    });
+  }
+
+  var nixLastResults = [];
+  document.getElementById('nixParseBtn').addEventListener('click', async function(){
+    var text = document.getElementById('nix-query').value.trim();
+    if(!text){ showToast('Describe what you ate first'); return; }
+    var wrap = document.getElementById('nix-results');
+    wrap.innerHTML = '<div class="qa-loading">Parsing meal…</div>';
+    try{
+      nixLastResults = await fetchNutritionix(text);
+      if(!nixLastResults.length){
+        wrap.innerHTML = '<div class="empty-note">Couldn\'t parse that into foods — try rephrasing.</div>';
+        return;
+      }
+      wrap.innerHTML = nixLastResults.map(function(f, i){
+        var tag = '<span class="qa-src-tag">NIX</span>';
+        return '<div class="qa-result" data-nixidx="'+i+'">'+
+          '<div><div class="qr-name">'+escapeHtml(f.name)+tag+'</div><div class="qr-sub">'+escapeHtml(f.serving)+'</div></div>'+
+          '<div class="qr-cal">'+Math.round(f.cal)+' kcal</div>'+
+        '</div>';
+      }).join('') + '<button class="btn btn-accent btn-block" id="nixLogAllBtn" style="margin-top:8px;">Log All '+nixLastResults.length+' Items to Today</button>';
+
+      wrap.querySelectorAll('[data-nixidx]').forEach(function(el){
+        el.addEventListener('click', function(){
+          var idx = Number(el.getAttribute('data-nixidx'));
+          fillMealFormFromFood(nixLastResults[idx]);
+        });
+      });
+      document.getElementById('nixLogAllBtn').addEventListener('click', async function(){
+        var date = document.getElementById('m-date').value || todayStr();
+        nixLastResults.forEach(function(f){
+          state.mealLogs.push({
+            id: uid(), ts: Date.now(), name: f.name, calories: f.cal, protein: f.p, carbs: f.c, fat: f.f,
+            fiber: f.fib||0, sugar: f.sug||0, sodium: f.sod||0, date: date
+          });
+        });
+        await persist('mealLogs');
+        ui.mealDate = date;
+        renderMeals();
+        document.getElementById('nix-query').value = '';
+        document.getElementById('nix-results').innerHTML = '';
+        showToast(nixLastResults.length+' items logged');
+      });
+    }catch(e){
+      wrap.innerHTML = '<div class="empty-note">'+escapeHtml(e.message||'Parse failed')+'</div>';
+    }
+  });
 
   function attachQaClickHandlers(){
     document.querySelectorAll('[data-qafood]').forEach(function(el){
@@ -2135,6 +2290,15 @@
     state.profile.apiModel = document.getElementById('apiModelInput').value.trim();
     await persist('profile');
     showToast(state.profile.apiKey ? 'API key saved locally' : 'API key cleared');
+  });
+
+  document.getElementById('saveFoodDbKeysBtn').addEventListener('click', async function(){
+    state.profile.usdaApiKey = document.getElementById('usdaKeyInput').value.trim();
+    state.profile.nixAppId = document.getElementById('nixAppIdInput').value.trim();
+    state.profile.nixAppKey = document.getElementById('nixAppKeyInput').value.trim();
+    await persist('profile');
+    renderQuickAdd();
+    showToast('Food database keys saved');
   });
 
   // ---------------- Barcode Scanner ----------------
