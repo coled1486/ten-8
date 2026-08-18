@@ -1902,6 +1902,9 @@
   // ---------------- Quick Add: local DB + live search + barcode + photo ----------------
   var qaActiveCat = 'All';
   var qaSearchDebounce = null;
+  // Collapsed by default so the tab doesn't open on a wall of ~70 foods —
+  // expands once the user searches, picks a category, or taps "Browse".
+  var qaBrowseOpen = false;
 
   function renderQuickAdd(){
     var catRow = document.getElementById('qa-cats');
@@ -1936,6 +1939,15 @@
 
   async function renderQaResults(q){
     var wrap = document.getElementById('qa-results');
+    var hasQuery = q && q.trim().length>0;
+
+    if(!hasQuery && qaActiveCat==='All' && !qaBrowseOpen){
+      wrap.innerHTML = '<button type="button" class="field-toggle" id="qaBrowseBtn" style="margin:2px 0 0;">+ Browse All Foods ('+(FOOD_DB.length+state.customFoods.length)+')</button>';
+      var browseBtn = document.getElementById('qaBrowseBtn');
+      if(browseBtn) browseBtn.addEventListener('click', function(){ qaBrowseOpen = true; renderQaResults(document.getElementById('qa-search').value); });
+      return;
+    }
+
     var matches = qaLocalMatches(q);
     wrap.innerHTML = matches.map(qaResultHtml).join('') || '<div class="empty-note">No matches. Try a different search or category.</div>';
     attachQaClickHandlers();
@@ -2008,7 +2020,7 @@
 
   document.getElementById('qa-cats').addEventListener('click', function(e){
     var c = e.target.getAttribute('data-qacat');
-    if(c){ qaActiveCat = c; renderQuickAdd(); }
+    if(c){ qaActiveCat = c; qaBrowseOpen = true; renderQuickAdd(); }
   });
   document.getElementById('qa-search').addEventListener('input', function(e){
     var q = e.target.value;
