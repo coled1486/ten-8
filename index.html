@@ -147,6 +147,10 @@
   .btn-danger{background:rgba(255,90,95,0.12); color:var(--bad); border:1px solid rgba(255,90,95,0.35);}
   .btn-block{width:100%;}
   .btn-row{display:flex; gap:10px;}
+  .field-toggle{
+    background:none; border:none; color:var(--accent); font-family:var(--mono); font-size:11px;
+    letter-spacing:0.5px; text-transform:uppercase; padding:4px 0; margin-bottom:8px; cursor:pointer;
+  }
   .quick-actions{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:4px;}
 
   /* ---------- Forms ---------- */
@@ -351,6 +355,22 @@
   #toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
   #toast.pr{border-color:var(--accent-dim); background:linear-gradient(180deg, #241A10, var(--panel-3));}
 
+  #undoToast{
+    position:fixed; left:50%; bottom:calc(90px + var(--safe-bottom)); transform:translateX(-50%) translateY(14px);
+    max-width:460px; width:calc(100% - 40px);
+    background:var(--panel-3); border:1px solid var(--accent-dim); color:var(--text);
+    font-family:var(--body-font); font-size:13px; font-weight:600;
+    padding:11px 14px; border-radius:12px; box-shadow:0 10px 28px rgba(0,0,0,0.45);
+    opacity:0; pointer-events:none; transition:opacity .25s ease, transform .25s ease;
+    z-index:61; display:flex; align-items:center; justify-content:space-between; gap:12px;
+  }
+  #undoToast.show{opacity:1; transform:translateX(-50%) translateY(0); pointer-events:auto;}
+  #undoToast button{
+    flex:0 0 auto; background:var(--accent); color:#100801; border:none;
+    font-family:var(--mono); font-size:11px; letter-spacing:0.5px; text-transform:uppercase;
+    padding:7px 12px; border-radius:8px;
+  }
+
   /* ---------- Tactile feedback ---------- */
   .btn, .day-chip, .toggle-btn, .chip-option, .tab-btn, .preset-btn, .water-btn, .supp-check, .workout-row{
     transition:transform .12s ease, background .15s ease, color .15s ease, opacity .15s ease;
@@ -466,7 +486,11 @@
       <div class="vitals-scroll" id="vitalsStrip"></div>
 
       <h2 class="section-title"><span>Today's Fuel</span><span class="rule"></span></h2>
+      <div class="card" id="macroRingCard"></div>
       <div class="card" id="macroCard"></div>
+
+      <h2 class="section-title"><span>Today's Micronutrients</span><span class="rule"></span></h2>
+      <div class="card" id="microCard"></div>
 
       <h2 class="section-title"><span>This Week</span><span class="rule"></span></h2>
       <div class="card" id="trendsCard"></div>
@@ -531,6 +555,12 @@
         <div class="grid-2">
           <div class="field"><label>Fat g</label><input type="number" id="m-fat" /></div>
           <div class="field"><label>Date</label><input type="date" id="m-date" /></div>
+        </div>
+        <button type="button" class="field-toggle" id="mealMicroToggle">+ Fiber / Sugar / Sodium</button>
+        <div class="grid-3" id="mealMicroFields" style="display:none;">
+          <div class="field"><label>Fiber g</label><input type="number" id="m-fib" /></div>
+          <div class="field"><label>Sugar g</label><input type="number" id="m-sug" /></div>
+          <div class="field"><label>Sodium mg</label><input type="number" id="m-sod" /></div>
         </div>
         <div class="btn-row">
           <button class="btn btn-accent" style="flex:1;" id="addMealBtn">Log Meal</button>
@@ -763,6 +793,11 @@
           <div class="field"><label>Carbs g</label><input type="number" id="cfCarb" /></div>
           <div class="field"><label>Fat g</label><input type="number" id="cfFat" /></div>
         </div>
+        <div class="grid-3">
+          <div class="field"><label>Fiber g</label><input type="number" id="cfFib" /></div>
+          <div class="field"><label>Sugar g</label><input type="number" id="cfSug" /></div>
+          <div class="field"><label>Sodium mg</label><input type="number" id="cfSod" /></div>
+        </div>
         <button class="btn btn-accent btn-block" id="addCustomFoodBtn">Save Custom Food</button>
       </div>
       <div class="card" id="customFoodsCard"></div>
@@ -873,6 +908,11 @@
           <div class="field"><label>Carbs g</label><input type="number" id="pfCarb" /></div>
         </div>
         <div class="field"><label>Fat g</label><input type="number" id="pfFat" /></div>
+        <div class="grid-3">
+          <div class="field"><label>Fiber g</label><input type="number" id="pfFib" /></div>
+          <div class="field"><label>Sugar g</label><input type="number" id="pfSug" /></div>
+          <div class="field"><label>Sodium mg</label><input type="number" id="pfSod" /></div>
+        </div>
         <div class="modal-note warn" id="pfConfidence"></div>
         <div class="btn-row">
           <button class="btn btn-ghost" style="flex:1;" id="photoRetakeBtn">Retake</button>
@@ -883,6 +923,7 @@
   </div>
 
   <div id="toast"></div>
+  <div id="undoToast"><span id="undoToastMsg"></span><button id="undoToastBtn">Undo</button></div>
 
   <div id="tabbar">
     <button class="tab-btn active" data-tab="dashboard">
@@ -1024,77 +1065,80 @@
   // Curated local food database — USDA-sourced reference values for common
   // foods, so Quick Add is instant and reliable even offline. Live search
   // (Open Food Facts) supplements this for packaged/branded items.
+  // fib/sug/sod (fiber g, sugar g, sodium mg) are USDA-typical approximations
+  // for the stated serving — same "close enough for tracking trends" spirit
+  // as the calorie/macro values above, not lab-verified.
   var FOOD_DB = [
-    { name:"Chicken Breast, cooked, skinless", cat:"Protein", serving:"100 g", cal:165, p:31, c:0, f:3.6 },
-    { name:"Chicken Thigh, cooked, skinless", cat:"Protein", serving:"100 g", cal:209, p:26, c:0, f:10.9 },
-    { name:"Ground Beef, 90/10, cooked", cat:"Protein", serving:"100 g", cal:217, p:26, c:0, f:12 },
-    { name:"Ground Beef, 80/20, cooked", cat:"Protein", serving:"100 g", cal:254, p:25, c:0, f:17 },
-    { name:"Ground Turkey, 93% lean, cooked", cat:"Protein", serving:"100 g", cal:176, p:27, c:0, f:8 },
-    { name:"Sirloin Steak, cooked", cat:"Protein", serving:"100 g", cal:206, p:29, c:0, f:9 },
-    { name:"Pork Chop, cooked", cat:"Protein", serving:"100 g", cal:231, p:26, c:0, f:14 },
-    { name:"Bacon, cooked", cat:"Protein", serving:"2 slices (16 g)", cal:72, p:5, c:0.2, f:5.6 },
-    { name:"Deli Turkey Breast", cat:"Protein", serving:"2 oz (56 g)", cal:60, p:12, c:2, f:0.5 },
-    { name:"Salmon, cooked", cat:"Protein", serving:"100 g", cal:208, p:22, c:0, f:13 },
-    { name:"Tuna, canned in water", cat:"Protein", serving:"100 g", cal:116, p:26, c:0, f:0.8 },
-    { name:"Tilapia, cooked", cat:"Protein", serving:"100 g", cal:128, p:26, c:0, f:2.7 },
-    { name:"Shrimp, cooked", cat:"Protein", serving:"100 g", cal:99, p:24, c:0.2, f:0.3 },
-    { name:"Egg, whole, large", cat:"Protein", serving:"1 egg (50 g)", cal:72, p:6.3, c:0.4, f:4.8 },
-    { name:"Egg Whites", cat:"Protein", serving:"1 cup (243 g)", cal:126, p:26, c:1.8, f:0.4 },
-    { name:"Cottage Cheese, low-fat", cat:"Protein", serving:"1 cup (226 g)", cal:163, p:28, c:6.1, f:2.3 },
-    { name:"Greek Yogurt, plain, nonfat", cat:"Protein", serving:"170 g (6 oz)", cal:100, p:17, c:6, f:0.7 },
-    { name:"Whey Protein Powder", cat:"Protein", serving:"1 scoop (31 g)", cal:120, p:24, c:3, f:1.5 },
-    { name:"Tofu, firm", cat:"Protein", serving:"100 g", cal:144, p:15, c:3.5, f:8.7 },
-    { name:"White Rice, cooked", cat:"Grains", serving:"1 cup (158 g)", cal:205, p:4.3, c:45, f:0.4 },
-    { name:"Brown Rice, cooked", cat:"Grains", serving:"1 cup (195 g)", cal:216, p:5, c:45, f:1.8 },
-    { name:"Quinoa, cooked", cat:"Grains", serving:"1 cup (185 g)", cal:222, p:8, c:39, f:3.6 },
-    { name:"Oats, dry", cat:"Grains", serving:"1/2 cup (40 g)", cal:150, p:5, c:27, f:2.5 },
-    { name:"White Bread", cat:"Grains", serving:"1 slice (28 g)", cal:75, p:2.6, c:14, f:1 },
-    { name:"Whole Wheat Bread", cat:"Grains", serving:"1 slice (28 g)", cal:69, p:3.6, c:12, f:1.1 },
-    { name:"Bagel, plain", cat:"Grains", serving:"1 bagel (105 g)", cal:289, p:11, c:56, f:1.7 },
-    { name:"Pasta, cooked", cat:"Grains", serving:"1 cup (140 g)", cal:221, p:8, c:43, f:1.3 },
-    { name:"Potato, baked, with skin", cat:"Grains", serving:"1 medium (173 g)", cal:161, p:4.3, c:37, f:0.2 },
-    { name:"Sweet Potato, baked", cat:"Grains", serving:"1 medium (114 g)", cal:103, p:2.3, c:24, f:0.2 },
-    { name:"Tortilla, flour", cat:"Grains", serving:"1 tortilla (49 g)", cal:146, p:4, c:24, f:3.6 },
-    { name:"Broccoli, cooked", cat:"Vegetables", serving:"1 cup (156 g)", cal:55, p:3.7, c:11, f:0.6 },
-    { name:"Spinach, raw", cat:"Vegetables", serving:"1 cup (30 g)", cal:7, p:0.9, c:1.1, f:0.1 },
-    { name:"Carrots, raw", cat:"Vegetables", serving:"1 cup chopped (128 g)", cal:52, p:1.2, c:12, f:0.3 },
-    { name:"Bell Pepper, raw", cat:"Vegetables", serving:"1 medium (119 g)", cal:24, p:1, c:6, f:0.2 },
-    { name:"Green Beans, cooked", cat:"Vegetables", serving:"1 cup (125 g)", cal:44, p:2.4, c:10, f:0.4 },
-    { name:"Mixed Salad Greens", cat:"Vegetables", serving:"2 cups (60 g)", cal:10, p:1, c:2, f:0.1 },
-    { name:"Avocado", cat:"Vegetables", serving:"1/2 fruit (100 g)", cal:160, p:2, c:8.5, f:14.7 },
-    { name:"Apple", cat:"Fruits", serving:"1 medium (182 g)", cal:95, p:0.5, c:25, f:0.3 },
-    { name:"Banana", cat:"Fruits", serving:"1 medium (118 g)", cal:105, p:1.3, c:27, f:0.4 },
-    { name:"Orange", cat:"Fruits", serving:"1 medium (131 g)", cal:62, p:1.2, c:15, f:0.2 },
-    { name:"Strawberries", cat:"Fruits", serving:"1 cup (152 g)", cal:49, p:1, c:12, f:0.5 },
-    { name:"Blueberries", cat:"Fruits", serving:"1 cup (148 g)", cal:84, p:1.1, c:21, f:0.5 },
-    { name:"Grapes", cat:"Fruits", serving:"1 cup (151 g)", cal:104, p:1.1, c:27, f:0.2 },
-    { name:"Milk, whole", cat:"Dairy", serving:"1 cup (244 g)", cal:149, p:7.7, c:12, f:8 },
-    { name:"Milk, 2%", cat:"Dairy", serving:"1 cup (244 g)", cal:122, p:8.1, c:12, f:4.8 },
-    { name:"Milk, skim", cat:"Dairy", serving:"1 cup (245 g)", cal:83, p:8.3, c:12, f:0.2 },
-    { name:"Cheddar Cheese", cat:"Dairy", serving:"1 oz (28 g)", cal:114, p:7, c:0.4, f:9.4 },
-    { name:"Mozzarella, part-skim", cat:"Dairy", serving:"1 oz (28 g)", cal:72, p:6.9, c:0.8, f:4.5 },
-    { name:"Butter", cat:"Dairy", serving:"1 tbsp (14 g)", cal:102, p:0.1, c:0, f:11.5 },
-    { name:"Almonds", cat:"Fats & Nuts", serving:"1 oz (28 g, ~23 nuts)", cal:164, p:6, c:6, f:14 },
-    { name:"Peanut Butter", cat:"Fats & Nuts", serving:"2 tbsp (32 g)", cal:188, p:8, c:6, f:16 },
-    { name:"Walnuts", cat:"Fats & Nuts", serving:"1 oz (28 g)", cal:185, p:4.3, c:3.9, f:18.5 },
-    { name:"Olive Oil", cat:"Fats & Nuts", serving:"1 tbsp (13.5 g)", cal:119, p:0, c:0, f:13.5 },
-    { name:"Black Beans, cooked", cat:"Legumes", serving:"1 cup (172 g)", cal:227, p:15, c:41, f:0.9 },
-    { name:"Chickpeas, cooked", cat:"Legumes", serving:"1 cup (164 g)", cal:269, p:14.5, c:45, f:4.2 },
-    { name:"Lentils, cooked", cat:"Legumes", serving:"1 cup (198 g)", cal:230, p:18, c:40, f:0.8 },
-    { name:"Hummus", cat:"Legumes", serving:"2 tbsp (30 g)", cal:70, p:2, c:6, f:5 },
-    { name:"Black Coffee", cat:"Beverages", serving:"1 cup (240 g)", cal:2, p:0.3, c:0, f:0 },
-    { name:"Protein Shake (ready-to-drink)", cat:"Beverages", serving:"1 bottle (325 g)", cal:160, p:30, c:4, f:3 },
-    { name:"Gatorade", cat:"Beverages", serving:"20 fl oz (591 ml)", cal:140, p:0, c:36, f:0 },
-    { name:"Cheeseburger, fast food", cat:"Prepared", serving:"1 sandwich (150 g)", cal:380, p:20, c:33, f:18 },
-    { name:"Chicken Sandwich, fast food", cat:"Prepared", serving:"1 sandwich (220 g)", cal:530, p:28, c:45, f:27 },
-    { name:"Pizza, cheese", cat:"Prepared", serving:"1 slice (107 g)", cal:272, p:12, c:34, f:10 },
-    { name:"French Fries", cat:"Prepared", serving:"medium (117 g)", cal:365, p:4, c:48, f:17 },
-    { name:"Burrito, chicken & rice", cat:"Prepared", serving:"1 burrito (300 g)", cal:650, p:35, c:75, f:22 },
-    { name:"Protein Bar", cat:"Prepared", serving:"1 bar (60 g)", cal:220, p:20, c:24, f:8 },
-    { name:"Potato Chips", cat:"Snacks", serving:"1 oz (28 g)", cal:152, p:2, c:15, f:10 },
-    { name:"Rice Cakes", cat:"Snacks", serving:"2 cakes (18 g)", cal:70, p:1.4, c:15, f:0.6 },
-    { name:"Beef Jerky", cat:"Snacks", serving:"1 oz (28 g)", cal:116, p:9.4, c:3.1, f:7.3 },
-    { name:"Granola Bar", cat:"Snacks", serving:"1 bar (35 g)", cal:140, p:3, c:23, f:5 }
+    { name:"Chicken Breast, cooked, skinless", cat:"Protein", serving:"100 g", cal:165, p:31, c:0, f:3.6, fib:0, sug:0, sod:74 },
+    { name:"Chicken Thigh, cooked, skinless", cat:"Protein", serving:"100 g", cal:209, p:26, c:0, f:10.9, fib:0, sug:0, sod:90 },
+    { name:"Ground Beef, 90/10, cooked", cat:"Protein", serving:"100 g", cal:217, p:26, c:0, f:12, fib:0, sug:0, sod:75 },
+    { name:"Ground Beef, 80/20, cooked", cat:"Protein", serving:"100 g", cal:254, p:25, c:0, f:17, fib:0, sug:0, sod:70 },
+    { name:"Ground Turkey, 93% lean, cooked", cat:"Protein", serving:"100 g", cal:176, p:27, c:0, f:8, fib:0, sug:0, sod:85 },
+    { name:"Sirloin Steak, cooked", cat:"Protein", serving:"100 g", cal:206, p:29, c:0, f:9, fib:0, sug:0, sod:60 },
+    { name:"Pork Chop, cooked", cat:"Protein", serving:"100 g", cal:231, p:26, c:0, f:14, fib:0, sug:0, sod:55 },
+    { name:"Bacon, cooked", cat:"Protein", serving:"2 slices (16 g)", cal:72, p:5, c:0.2, f:5.6, fib:0, sug:0, sod:185 },
+    { name:"Deli Turkey Breast", cat:"Protein", serving:"2 oz (56 g)", cal:60, p:12, c:2, f:0.5, fib:0, sug:1, sod:450 },
+    { name:"Salmon, cooked", cat:"Protein", serving:"100 g", cal:208, p:22, c:0, f:13, fib:0, sug:0, sod:59 },
+    { name:"Tuna, canned in water", cat:"Protein", serving:"100 g", cal:116, p:26, c:0, f:0.8, fib:0, sug:0, sod:247 },
+    { name:"Tilapia, cooked", cat:"Protein", serving:"100 g", cal:128, p:26, c:0, f:2.7, fib:0, sug:0, sod:56 },
+    { name:"Shrimp, cooked", cat:"Protein", serving:"100 g", cal:99, p:24, c:0.2, f:0.3, fib:0, sug:0, sod:111 },
+    { name:"Egg, whole, large", cat:"Protein", serving:"1 egg (50 g)", cal:72, p:6.3, c:0.4, f:4.8, fib:0, sug:0.2, sod:71 },
+    { name:"Egg Whites", cat:"Protein", serving:"1 cup (243 g)", cal:126, p:26, c:1.8, f:0.4, fib:0, sug:1, sod:215 },
+    { name:"Cottage Cheese, low-fat", cat:"Protein", serving:"1 cup (226 g)", cal:163, p:28, c:6.1, f:2.3, fib:0, sug:6, sod:700 },
+    { name:"Greek Yogurt, plain, nonfat", cat:"Protein", serving:"170 g (6 oz)", cal:100, p:17, c:6, f:0.7, fib:0, sug:6, sod:61 },
+    { name:"Whey Protein Powder", cat:"Protein", serving:"1 scoop (31 g)", cal:120, p:24, c:3, f:1.5, fib:1, sug:2, sod:120 },
+    { name:"Tofu, firm", cat:"Protein", serving:"100 g", cal:144, p:15, c:3.5, f:8.7, fib:2, sug:0.6, sod:10 },
+    { name:"White Rice, cooked", cat:"Grains", serving:"1 cup (158 g)", cal:205, p:4.3, c:45, f:0.4, fib:0.6, sug:0.1, sod:2 },
+    { name:"Brown Rice, cooked", cat:"Grains", serving:"1 cup (195 g)", cal:216, p:5, c:45, f:1.8, fib:3.5, sug:0.7, sod:10 },
+    { name:"Quinoa, cooked", cat:"Grains", serving:"1 cup (185 g)", cal:222, p:8, c:39, f:3.6, fib:5, sug:1.6, sod:13 },
+    { name:"Oats, dry", cat:"Grains", serving:"1/2 cup (40 g)", cal:150, p:5, c:27, f:2.5, fib:4, sug:1, sod:0 },
+    { name:"White Bread", cat:"Grains", serving:"1 slice (28 g)", cal:75, p:2.6, c:14, f:1, fib:0.8, sug:1.4, sod:144 },
+    { name:"Whole Wheat Bread", cat:"Grains", serving:"1 slice (28 g)", cal:69, p:3.6, c:12, f:1.1, fib:1.9, sug:1.6, sod:132 },
+    { name:"Bagel, plain", cat:"Grains", serving:"1 bagel (105 g)", cal:289, p:11, c:56, f:1.7, fib:2.4, sug:6, sod:561 },
+    { name:"Pasta, cooked", cat:"Grains", serving:"1 cup (140 g)", cal:221, p:8, c:43, f:1.3, fib:2.5, sug:0.8, sod:1 },
+    { name:"Potato, baked, with skin", cat:"Grains", serving:"1 medium (173 g)", cal:161, p:4.3, c:37, f:0.2, fib:3.8, sug:2, sod:17 },
+    { name:"Sweet Potato, baked", cat:"Grains", serving:"1 medium (114 g)", cal:103, p:2.3, c:24, f:0.2, fib:3.8, sug:7, sod:41 },
+    { name:"Tortilla, flour", cat:"Grains", serving:"1 tortilla (49 g)", cal:146, p:4, c:24, f:3.6, fib:1, sug:1, sod:310 },
+    { name:"Broccoli, cooked", cat:"Vegetables", serving:"1 cup (156 g)", cal:55, p:3.7, c:11, f:0.6, fib:5.1, sug:2.2, sod:39 },
+    { name:"Spinach, raw", cat:"Vegetables", serving:"1 cup (30 g)", cal:7, p:0.9, c:1.1, f:0.1, fib:0.7, sug:0.1, sod:24 },
+    { name:"Carrots, raw", cat:"Vegetables", serving:"1 cup chopped (128 g)", cal:52, p:1.2, c:12, f:0.3, fib:3.6, sug:6, sod:88 },
+    { name:"Bell Pepper, raw", cat:"Vegetables", serving:"1 medium (119 g)", cal:24, p:1, c:6, f:0.2, fib:2.1, sug:4, sod:3 },
+    { name:"Green Beans, cooked", cat:"Vegetables", serving:"1 cup (125 g)", cal:44, p:2.4, c:10, f:0.4, fib:4, sug:3.3, sod:1 },
+    { name:"Mixed Salad Greens", cat:"Vegetables", serving:"2 cups (60 g)", cal:10, p:1, c:2, f:0.1, fib:1.5, sug:0.5, sod:15 },
+    { name:"Avocado", cat:"Vegetables", serving:"1/2 fruit (100 g)", cal:160, p:2, c:8.5, f:14.7, fib:6.7, sug:0.7, sod:7 },
+    { name:"Apple", cat:"Fruits", serving:"1 medium (182 g)", cal:95, p:0.5, c:25, f:0.3, fib:4.4, sug:19, sod:2 },
+    { name:"Banana", cat:"Fruits", serving:"1 medium (118 g)", cal:105, p:1.3, c:27, f:0.4, fib:3.1, sug:14, sod:1 },
+    { name:"Orange", cat:"Fruits", serving:"1 medium (131 g)", cal:62, p:1.2, c:15, f:0.2, fib:3.1, sug:12, sod:0 },
+    { name:"Strawberries", cat:"Fruits", serving:"1 cup (152 g)", cal:49, p:1, c:12, f:0.5, fib:3, sug:7, sod:2 },
+    { name:"Blueberries", cat:"Fruits", serving:"1 cup (148 g)", cal:84, p:1.1, c:21, f:0.5, fib:3.6, sug:15, sod:1 },
+    { name:"Grapes", cat:"Fruits", serving:"1 cup (151 g)", cal:104, p:1.1, c:27, f:0.2, fib:1.4, sug:23, sod:3 },
+    { name:"Milk, whole", cat:"Dairy", serving:"1 cup (244 g)", cal:149, p:7.7, c:12, f:8, fib:0, sug:12, sod:105 },
+    { name:"Milk, 2%", cat:"Dairy", serving:"1 cup (244 g)", cal:122, p:8.1, c:12, f:4.8, fib:0, sug:12, sod:115 },
+    { name:"Milk, skim", cat:"Dairy", serving:"1 cup (245 g)", cal:83, p:8.3, c:12, f:0.2, fib:0, sug:12, sod:103 },
+    { name:"Cheddar Cheese", cat:"Dairy", serving:"1 oz (28 g)", cal:114, p:7, c:0.4, f:9.4, fib:0, sug:0.1, sod:174 },
+    { name:"Mozzarella, part-skim", cat:"Dairy", serving:"1 oz (28 g)", cal:72, p:6.9, c:0.8, f:4.5, fib:0, sug:0.3, sod:175 },
+    { name:"Butter", cat:"Dairy", serving:"1 tbsp (14 g)", cal:102, p:0.1, c:0, f:11.5, fib:0, sug:0, sod:82 },
+    { name:"Almonds", cat:"Fats & Nuts", serving:"1 oz (28 g, ~23 nuts)", cal:164, p:6, c:6, f:14, fib:3.5, sug:1.2, sod:0 },
+    { name:"Peanut Butter", cat:"Fats & Nuts", serving:"2 tbsp (32 g)", cal:188, p:8, c:6, f:16, fib:1.6, sug:3, sod:147 },
+    { name:"Walnuts", cat:"Fats & Nuts", serving:"1 oz (28 g)", cal:185, p:4.3, c:3.9, f:18.5, fib:1.9, sug:0.7, sod:1 },
+    { name:"Olive Oil", cat:"Fats & Nuts", serving:"1 tbsp (13.5 g)", cal:119, p:0, c:0, f:13.5, fib:0, sug:0, sod:0 },
+    { name:"Black Beans, cooked", cat:"Legumes", serving:"1 cup (172 g)", cal:227, p:15, c:41, f:0.9, fib:15, sug:0.6, sod:1 },
+    { name:"Chickpeas, cooked", cat:"Legumes", serving:"1 cup (164 g)", cal:269, p:14.5, c:45, f:4.2, fib:12.5, sug:8, sod:11 },
+    { name:"Lentils, cooked", cat:"Legumes", serving:"1 cup (198 g)", cal:230, p:18, c:40, f:0.8, fib:15.6, sug:3.6, sod:4 },
+    { name:"Hummus", cat:"Legumes", serving:"2 tbsp (30 g)", cal:70, p:2, c:6, f:5, fib:1.5, sug:0.1, sod:110 },
+    { name:"Black Coffee", cat:"Beverages", serving:"1 cup (240 g)", cal:2, p:0.3, c:0, f:0, fib:0, sug:0, sod:5 },
+    { name:"Protein Shake (ready-to-drink)", cat:"Beverages", serving:"1 bottle (325 g)", cal:160, p:30, c:4, f:3, fib:1, sug:1, sod:230 },
+    { name:"Gatorade", cat:"Beverages", serving:"20 fl oz (591 ml)", cal:140, p:0, c:36, f:0, fib:0, sug:34, sod:270 },
+    { name:"Cheeseburger, fast food", cat:"Prepared", serving:"1 sandwich (150 g)", cal:380, p:20, c:33, f:18, fib:2, sug:7, sod:830 },
+    { name:"Chicken Sandwich, fast food", cat:"Prepared", serving:"1 sandwich (220 g)", cal:530, p:28, c:45, f:27, fib:2, sug:8, sod:1170 },
+    { name:"Pizza, cheese", cat:"Prepared", serving:"1 slice (107 g)", cal:272, p:12, c:34, f:10, fib:2, sug:3.8, sod:640 },
+    { name:"French Fries", cat:"Prepared", serving:"medium (117 g)", cal:365, p:4, c:48, f:17, fib:4, sug:0.3, sod:246 },
+    { name:"Burrito, chicken & rice", cat:"Prepared", serving:"1 burrito (300 g)", cal:650, p:35, c:75, f:22, fib:6, sug:4, sod:1450 },
+    { name:"Protein Bar", cat:"Prepared", serving:"1 bar (60 g)", cal:220, p:20, c:24, f:8, fib:9, sug:2, sod:200 },
+    { name:"Potato Chips", cat:"Snacks", serving:"1 oz (28 g)", cal:152, p:2, c:15, f:10, fib:1, sug:0.1, sod:170 },
+    { name:"Rice Cakes", cat:"Snacks", serving:"2 cakes (18 g)", cal:70, p:1.4, c:15, f:0.6, fib:0.4, sug:0.1, sod:29 },
+    { name:"Beef Jerky", cat:"Snacks", serving:"1 oz (28 g)", cal:116, p:9.4, c:3.1, f:7.3, fib:0.5, sug:3, sod:506 },
+    { name:"Granola Bar", cat:"Snacks", serving:"1 bar (35 g)", cal:140, p:3, c:23, f:5, fib:1.5, sug:8, sod:85 }
   ];
   var FOOD_CATS = ["All","Custom"].concat(Array.from(new Set(FOOD_DB.map(function(f){ return f.cat; }))));
 
@@ -1242,6 +1286,28 @@
     clearTimeout(toastTimer);
     toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 2400);
   }
+
+  // Undo-toast: perform a destructive action immediately (no blocking
+  // confirm() popup), but hold a snapshot for a few seconds so it can be
+  // reverted with one tap. Used for Import Backup and Clear All Data.
+  var undoToastTimer = null, undoToastAction = null;
+  function showUndoToast(msg, onUndo, seconds){
+    var t = document.getElementById('undoToast');
+    document.getElementById('undoToastMsg').textContent = msg;
+    undoToastAction = onUndo;
+    t.classList.add('show');
+    clearTimeout(undoToastTimer);
+    undoToastTimer = setTimeout(function(){
+      t.classList.remove('show');
+      undoToastAction = null;
+    }, (seconds||6)*1000);
+  }
+  document.getElementById('undoToastBtn').addEventListener('click', function(){
+    if(undoToastAction) undoToastAction();
+    document.getElementById('undoToast').classList.remove('show');
+    clearTimeout(undoToastTimer);
+    undoToastAction = null;
+  });
 
   // Uses Mifflin-St Jeor (needs sex/age/height from Settings) when personal
   // info is on file; otherwise falls back to a Katch-McArdle lean-mass estimate.
@@ -1663,6 +1729,8 @@
       macroBarHtml('Protein', totals.protein, t.protein, 'pro', 'g') +
       macroBarHtml('Carbs', totals.carbs, t.carbs, 'carb', 'g') +
       macroBarHtml('Fat', totals.fat, t.fat, 'fat', 'g', true);
+    renderMacroRing(totals, t);
+    renderMicroCard(totals);
 
     // targets panel values
     document.getElementById('t-cal').value = t.calories;
@@ -1700,6 +1768,72 @@
     }
   }
 
+  // MFP-style ring: overall arc length = % of calorie target eaten today
+  // (capped at 100%), split into protein/carb/fat segments proportional to
+  // each macro's share of calories actually logged so far.
+  function renderMacroRing(totals, targets){
+    var card = document.getElementById('macroRingCard');
+    var target = targets.calories||0;
+    var r = 50, cx = 60, cy = 60;
+    var circumference = 2*Math.PI*r;
+    var filledFraction = target>0 ? Math.min(1, totals.calories/target) : 0;
+    var proteinCal = (totals.protein||0)*4, carbCal = (totals.carbs||0)*4, fatCal = (totals.fat||0)*9;
+    var sumMacroCal = proteinCal+carbCal+fatCal;
+    var filledLen = circumference*filledFraction;
+    var proteinLen = sumMacroCal>0 ? filledLen*(proteinCal/sumMacroCal) : 0;
+    var carbLen = sumMacroCal>0 ? filledLen*(carbCal/sumMacroCal) : 0;
+    var fatLen = Math.max(0, filledLen-proteinLen-carbLen);
+
+    function arc(len, offset, color){
+      if(len<=0) return '';
+      return '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+color+'" stroke-width="12" '+
+        'stroke-dasharray="'+len+' '+(circumference-len)+'" stroke-dashoffset="'+(-offset)+'" stroke-linecap="butt" />';
+    }
+    var remaining = Math.max(0, target-totals.calories);
+    var svg = '<svg viewBox="0 0 120 120" style="width:180px; height:180px; display:block; margin:0 auto; transform:rotate(-90deg);">'+
+      '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="var(--panel-3)" stroke-width="12" />'+
+      arc(proteinLen, 0, 'var(--good)')+
+      arc(carbLen, proteinLen, '#5AB0FF')+
+      arc(fatLen, proteinLen+carbLen, 'var(--warn)')+
+      '</svg>';
+    card.innerHTML =
+      '<div style="position:relative;">'+svg+
+      '<div style="position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; pointer-events:none;">'+
+        '<div style="font-family:var(--display); font-size:26px; font-weight:600; color:var(--text);">'+Math.round(totals.calories)+'</div>'+
+        '<div style="font-family:var(--mono); font-size:10px; color:var(--text-dim); letter-spacing:0.5px;">of '+target+' kcal</div>'+
+        '<div style="font-family:var(--mono); font-size:10px; color:var(--text-faint); margin-top:2px;">'+(remaining>0 ? remaining+' left' : 'target hit')+'</div>'+
+      '</div></div>'+
+      '<div style="display:flex; justify-content:center; gap:16px; margin-top:12px; font-family:var(--mono); font-size:11px;">'+
+        '<span><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--good); margin-right:5px;"></span>Protein '+Math.round(totals.protein)+'g</span>'+
+        '<span><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#5AB0FF; margin-right:5px;"></span>Carbs '+Math.round(totals.carbs)+'g</span>'+
+        '<span><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--warn); margin-right:5px;"></span>Fat '+Math.round(totals.fat)+'g</span>'+
+      '</div>';
+  }
+
+  // Generic guidance, not personalized to sex/age/weight like calorie/macro
+  // targets are — fiber and sodium recommendations shown here are common
+  // reference values (fiber ~25-38g/day, sodium ceiling ~2300mg/day).
+  var MICRO_GOALS = { fiber:30, sugarCeiling:50, sodiumCeiling:2300 };
+
+  function renderMicroCard(totals){
+    var card = document.getElementById('microCard');
+    var fiber = totals.fiber||0, sugar = totals.sugar||0, sodium = totals.sodium||0;
+    if(!fiber && !sugar && !sodium){
+      card.innerHTML = '<div class="empty-note">No fiber/sugar/sodium logged yet today — expand "Fiber / Sugar / Sodium" on a meal to add it.</div>';
+      return;
+    }
+    var fiberPct = Math.min(100, Math.round((fiber/MICRO_GOALS.fiber)*100));
+    var sugarPct = Math.min(100, Math.round((sugar/MICRO_GOALS.sugarCeiling)*100));
+    var sodiumPct = Math.min(100, Math.round((sodium/MICRO_GOALS.sodiumCeiling)*100));
+    card.innerHTML =
+      '<div class="macro-row"><div class="macro-head"><span class="label">Fiber</span><span class="nums">'+round1(fiber)+'g / '+MICRO_GOALS.fiber+'g goal</span></div>'+
+        '<div class="macro-track"><div class="macro-fill pro" style="width:'+fiberPct+'%"></div></div></div>'+
+      '<div class="macro-row"><div class="macro-head"><span class="label">Sugar</span><span class="nums">'+round1(sugar)+'g / '+MICRO_GOALS.sugarCeiling+'g limit</span></div>'+
+        '<div class="macro-track"><div class="macro-fill fat" style="width:'+sugarPct+'%"></div></div></div>'+
+      '<div class="macro-row" style="margin-bottom:0;"><div class="macro-head"><span class="label">Sodium</span><span class="nums">'+Math.round(sodium)+'mg / '+MICRO_GOALS.sodiumCeiling+'mg limit</span></div>'+
+        '<div class="macro-track"><div class="macro-fill carb" style="width:'+sodiumPct+'%"></div></div></div>';
+  }
+
   function macroBarHtml(label, val, target, cls, unit, last){
     var pct = target>0 ? Math.min(100, Math.round((val/target)*100)) : 0;
     return '<div class="macro-row" style="'+(last?'margin-bottom:0;':'')+'">'+
@@ -1717,12 +1851,15 @@
 
   function mealTotalsForDate(d){
     var items = state.mealLogs.filter(function(m){ return m.date===d; });
-    var t = { calories:0, protein:0, carbs:0, fat:0 };
+    var t = { calories:0, protein:0, carbs:0, fat:0, fiber:0, sugar:0, sodium:0 };
     items.forEach(function(m){
       t.calories += Number(m.calories)||0;
       t.protein += Number(m.protein)||0;
       t.carbs += Number(m.carbs)||0;
       t.fat += Number(m.fat)||0;
+      t.fiber += Number(m.fiber)||0;
+      t.sugar += Number(m.sugar)||0;
+      t.sodium += Number(m.sodium)||0;
     });
     return t;
   }
@@ -1835,7 +1972,11 @@
       var pro = per100 ? (n['proteins_100g']||0) : (n['proteins_serving']||0);
       var carb = per100 ? (n['carbohydrates_100g']||0) : (n['carbohydrates_serving']||0);
       var fat = per100 ? (n['fat_100g']||0) : (n['fat_serving']||0);
-      return { name: p.brands ? (p.product_name+' ('+p.brands+')') : p.product_name, cat:'Live', serving: per100 ? '100 g' : (p.serving_size||'1 serving'), cal: Math.round(cal), p: Math.round(pro*10)/10, c: Math.round(carb*10)/10, f: Math.round(fat*10)/10, _src:'OFF' };
+      var fib = per100 ? (n['fiber_100g']||0) : (n['fiber_serving']||0);
+      var sug = per100 ? (n['sugars_100g']||0) : (n['sugars_serving']||0);
+      // OFF reports sodium in grams; the app tracks sodium in mg.
+      var sodG = per100 ? (n['sodium_100g']||0) : (n['sodium_serving']||0);
+      return { name: p.brands ? (p.product_name+' ('+p.brands+')') : p.product_name, cat:'Live', serving: per100 ? '100 g' : (p.serving_size||'1 serving'), cal: Math.round(cal), p: Math.round(pro*10)/10, c: Math.round(carb*10)/10, f: Math.round(fat*10)/10, fib: Math.round(fib*10)/10, sug: Math.round(sug*10)/10, sod: Math.round(sodG*1000), _src:'OFF' };
     }).filter(function(f){ return f.cal>0; });
   }
 
@@ -1855,6 +1996,12 @@
     document.getElementById('m-pro').value = Math.round(food.p*servings*10)/10;
     document.getElementById('m-carb').value = Math.round(food.c*servings*10)/10;
     document.getElementById('m-fat').value = Math.round(food.f*servings*10)/10;
+    document.getElementById('m-fib').value = Math.round((food.fib||0)*servings*10)/10;
+    document.getElementById('m-sug').value = Math.round((food.sug||0)*servings*10)/10;
+    document.getElementById('m-sod').value = Math.round((food.sod||0)*servings);
+    if((food.fib||food.sug||food.sod)){
+      document.getElementById('mealMicroFields').style.display = 'grid';
+    }
     document.getElementById('m-name').scrollIntoView({ behavior:'smooth', block:'center' });
     showToast('Filled from database — review & Log Meal');
   }
@@ -1889,10 +2036,13 @@
       cal: cal,
       p: Number(document.getElementById('cfPro').value)||0,
       c: Number(document.getElementById('cfCarb').value)||0,
-      f: Number(document.getElementById('cfFat').value)||0
+      f: Number(document.getElementById('cfFat').value)||0,
+      fib: Number(document.getElementById('cfFib').value)||0,
+      sug: Number(document.getElementById('cfSug').value)||0,
+      sod: Number(document.getElementById('cfSod').value)||0
     });
     await persist('customFoods');
-    ['cfName','cfServing','cfCal','cfPro','cfCarb','cfFat'].forEach(function(id){ document.getElementById(id).value=''; });
+    ['cfName','cfServing','cfCal','cfPro','cfCarb','cfFat','cfFib','cfSug','cfSod'].forEach(function(id){ document.getElementById(id).value=''; });
     renderCustomFoodsCard();
     showToast('Custom food saved');
   });
@@ -1997,8 +2147,11 @@
       var pro = per100 ? (n['proteins_100g']||0) : (n['proteins_serving']||0);
       var carb = per100 ? (n['carbohydrates_100g']||0) : (n['carbohydrates_serving']||0);
       var fat = per100 ? (n['fat_100g']||0) : (n['fat_serving']||0);
+      var fib = per100 ? (n['fiber_100g']||0) : (n['fiber_serving']||0);
+      var sug = per100 ? (n['sugars_100g']||0) : (n['sugars_serving']||0);
+      var sodG = per100 ? (n['sodium_100g']||0) : (n['sodium_serving']||0);
       if(!cal){ showToast('No nutrition data available for that product'); return; }
-      fillMealFormFromFood({ name: p.brands ? (p.product_name+' ('+p.brands+')') : (p.product_name||'Unknown product'), serving: per100 ? '100 g' : (p.serving_size||'1 serving'), cal: Math.round(cal), p: Math.round(pro*10)/10, c: Math.round(carb*10)/10, f: Math.round(fat*10)/10 });
+      fillMealFormFromFood({ name: p.brands ? (p.product_name+' ('+p.brands+')') : (p.product_name||'Unknown product'), serving: per100 ? '100 g' : (p.serving_size||'1 serving'), cal: Math.round(cal), p: Math.round(pro*10)/10, c: Math.round(carb*10)/10, f: Math.round(fat*10)/10, fib: Math.round(fib*10)/10, sug: Math.round(sug*10)/10, sod: Math.round(sodG*1000) });
     }catch(e){
       showToast('Barcode lookup failed — check your connection');
     }
@@ -2063,7 +2216,7 @@
       model: model, max_tokens: 500,
       messages: [{ role:'user', content:[
         { type:'image', source:{ type:'base64', media_type:mediaType, data:base64 } },
-        { type:'text', text:'Identify the food(s) in this photo and estimate total calories and macros for the visible portion. Respond with ONLY minified JSON, no markdown fencing, no commentary, in this exact shape: {"name":"...","serving":"...","cal":0,"p":0,"c":0,"f":0,"confidence":"low|medium|high","notes":"..."}' }
+        { type:'text', text:'Identify the food(s) in this photo and estimate total calories, macros, and micronutrients for the visible portion. Respond with ONLY minified JSON, no markdown fencing, no commentary, in this exact shape: {"name":"...","serving":"...","cal":0,"p":0,"c":0,"f":0,"fib":0,"sug":0,"sod":0,"confidence":"low|medium|high","notes":"..."} where fib/sug are grams of fiber/sugar and sod is milligrams of sodium.' }
       ] }]
     };
     var res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -2090,6 +2243,9 @@
     document.getElementById('pfPro').value = Math.round((est.p||0)*10)/10;
     document.getElementById('pfCarb').value = Math.round((est.c||0)*10)/10;
     document.getElementById('pfFat').value = Math.round((est.f||0)*10)/10;
+    document.getElementById('pfFib').value = Math.round((est.fib||0)*10)/10;
+    document.getElementById('pfSug').value = Math.round((est.sug||0)*10)/10;
+    document.getElementById('pfSod').value = Math.round(est.sod||0);
     document.getElementById('pfConfidence').textContent = 'AI estimate — confidence: '+((est.confidence||'unknown').toUpperCase())+'. '+(est.notes||'')+' Review and adjust before logging.';
   }
 
@@ -2101,6 +2257,12 @@
     document.getElementById('m-pro').value = Number(document.getElementById('pfPro').value)||0;
     document.getElementById('m-carb').value = Number(document.getElementById('pfCarb').value)||0;
     document.getElementById('m-fat').value = Number(document.getElementById('pfFat').value)||0;
+    document.getElementById('m-fib').value = Number(document.getElementById('pfFib').value)||0;
+    document.getElementById('m-sug').value = Number(document.getElementById('pfSug').value)||0;
+    document.getElementById('m-sod').value = Number(document.getElementById('pfSod').value)||0;
+    if(Number(document.getElementById('pfFib').value) || Number(document.getElementById('pfSug').value) || Number(document.getElementById('pfSod').value)){
+      document.getElementById('mealMicroFields').style.display = 'grid';
+    }
     closePhotoModal();
     document.getElementById('m-name').scrollIntoView({ behavior:'smooth', block:'center' });
     showToast('Filled from AI estimate — review & Log Meal');
@@ -2360,7 +2522,8 @@
   // Meals
   function resetMealForm(){
     ui.editingMealId = null;
-    ['m-name','m-cal','m-pro','m-carb','m-fat'].forEach(function(id){ document.getElementById(id).value=''; });
+    ['m-name','m-cal','m-pro','m-carb','m-fat','m-fib','m-sug','m-sod'].forEach(function(id){ document.getElementById(id).value=''; });
+    document.getElementById('mealMicroFields').style.display = 'none';
     document.getElementById('mealFormTitle').textContent = 'Log a Meal';
     document.getElementById('addMealBtn').textContent = 'Log Meal';
     document.getElementById('cancelMealEditBtn').style.display = 'none';
@@ -2374,6 +2537,10 @@
     document.getElementById('m-pro').value = m.protein;
     document.getElementById('m-carb').value = m.carbs;
     document.getElementById('m-fat').value = m.fat;
+    document.getElementById('m-fib').value = m.fiber||'';
+    document.getElementById('m-sug').value = m.sugar||'';
+    document.getElementById('m-sod').value = m.sodium||'';
+    if(m.fiber||m.sugar||m.sodium) document.getElementById('mealMicroFields').style.display = 'grid';
     document.getElementById('m-date').value = m.date;
     document.getElementById('mealFormTitle').textContent = 'Edit Meal';
     document.getElementById('addMealBtn').textContent = 'Update Meal';
@@ -2383,6 +2550,10 @@
   document.getElementById('cancelMealEditBtn').addEventListener('click', function(){
     resetMealForm();
     document.getElementById('m-date').value = ui.mealDate;
+  });
+  document.getElementById('mealMicroToggle').addEventListener('click', function(){
+    var el = document.getElementById('mealMicroFields');
+    el.style.display = el.style.display==='none' ? 'grid' : 'none';
   });
   document.getElementById('addMealBtn').addEventListener('click', async function(){
     var name = document.getElementById('m-name').value.trim();
@@ -2397,6 +2568,9 @@
           protein: Number(document.getElementById('m-pro').value)||0,
           carbs: Number(document.getElementById('m-carb').value)||0,
           fat: Number(document.getElementById('m-fat').value)||0,
+          fiber: Number(document.getElementById('m-fib').value)||0,
+          sugar: Number(document.getElementById('m-sug').value)||0,
+          sodium: Number(document.getElementById('m-sod').value)||0,
           date: date
         });
       }
@@ -2414,6 +2588,9 @@
       protein: Number(document.getElementById('m-pro').value)||0,
       carbs: Number(document.getElementById('m-carb').value)||0,
       fat: Number(document.getElementById('m-fat').value)||0,
+      fiber: Number(document.getElementById('m-fib').value)||0,
+      sugar: Number(document.getElementById('m-sug').value)||0,
+      sodium: Number(document.getElementById('m-sod').value)||0,
       date: date
     };
     state.mealLogs.push(entry);
@@ -3062,7 +3239,11 @@
         showToast('That doesn\'t look like a Ten-Eight backup file');
         return;
       }
-      if(!confirm('Import this backup? It will replace your current logged data and settings on this device.')) return;
+      // No blocking confirm() — apply immediately, but snapshot everything
+      // first so a few seconds of "Undo" fully reverts the import.
+      var snapshot = { profile: JSON.parse(JSON.stringify(state.profile)) };
+      BACKUP_KEYS.forEach(function(k){ snapshot[k] = JSON.parse(JSON.stringify(state[k])); });
+
       if(data.profile && typeof data.profile==='object'){
         state.profile = Object.assign({}, state.profile, data.profile, {
           apiKey: state.profile.apiKey // never overwrite the locally-stored API key from an imported file
@@ -3080,20 +3261,39 @@
       }
       if(!state.supplementsDefs || !state.supplementsDefs.length) state.supplementsDefs = DEFAULT_SUPPLEMENTS.slice();
       renderDashboard(); renderMeals(); renderTraining(); renderBody(); renderRecovery(); renderSettings();
-      showToast('Backup imported');
+      showUndoToast('Backup imported — replaced your data', async function(){
+        state.profile = snapshot.profile;
+        BACKUP_KEYS.forEach(function(k){ state[k] = snapshot[k]; });
+        await persist('profile');
+        await persist('bodyLogs'); await persist('mealLogs'); await persist('exerciseLogs');
+        await persist('recoveryLogs'); await persist('supplementLogs'); await persist('benchmarkLogs');
+        await persist('customFoods'); await persist('trainingTemplates'); await persist('supplementsDefs');
+        renderDashboard(); renderMeals(); renderTraining(); renderBody(); renderRecovery(); renderSettings();
+        showToast('Import undone — previous data restored');
+      });
     };
     reader.readAsText(file);
   });
 
   document.getElementById('clearAllDataBtn').addEventListener('click', async function(){
-    if(!confirm('Clear all logged data (meals, training, body, recovery, CPAT tests)? Your profile, targets, custom foods, supplements list, and training templates are kept. This cannot be undone — export a backup first if you want one.')) return;
+    // No blocking confirm() — clear immediately, snapshot held for Undo.
+    var snapshot = {};
+    LOG_ONLY_KEYS.forEach(function(k){ snapshot[k] = JSON.parse(JSON.stringify(state[k])); });
     for(var i=0;i<LOG_ONLY_KEYS.length;i++){
       var k = LOG_ONLY_KEYS[i];
       state[k] = [];
       await persist(k);
     }
     renderDashboard(); renderMeals(); renderTraining(); renderBody(); renderRecovery(); renderSettings();
-    showToast('Logged data cleared');
+    showUndoToast('Logged data cleared', async function(){
+      for(var i=0;i<LOG_ONLY_KEYS.length;i++){
+        var k = LOG_ONLY_KEYS[i];
+        state[k] = snapshot[k];
+        await persist(k);
+      }
+      renderDashboard(); renderMeals(); renderTraining(); renderBody(); renderRecovery(); renderSettings();
+      showToast('Clear undone — logged data restored');
+    }, 8);
   });
 
   // ---------------- Init ----------------
@@ -3109,9 +3309,29 @@
     renderRecovery();
     renderSettings();
     initFirebaseIfConfigured();
+    handleShortcutAction();
     setTimeout(function(){
       document.getElementById('splash').classList.add('hide');
     }, 450);
+  }
+
+  // PWA home-screen shortcuts (see manifest.json "shortcuts") land here via
+  // ?action=... — jump straight to the relevant tab and focus the form.
+  function handleShortcutAction(){
+    var params = new URLSearchParams(window.location.search);
+    var action = params.get('action');
+    if(!action) return;
+    if(action==='logMeal'){
+      showTab('meals');
+      setTimeout(function(){ document.getElementById('m-name').focus(); }, 300);
+    } else if(action==='logWeight'){
+      showTab('body');
+      setTimeout(function(){ document.getElementById('b-weight').focus(); }, 300);
+    }
+    // Clean the URL so a refresh/share doesn't keep re-triggering the jump.
+    if(window.history && window.history.replaceState){
+      window.history.replaceState({}, '', window.location.pathname);
+    }
   }
   init();
 
