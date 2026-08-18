@@ -326,6 +326,13 @@
   .cpat-banner .db-text b{ color:var(--accent); }
   .cpat-banner.taper .db-text b{ color:var(--bad); }
 
+  .motivation-banner{
+    background:var(--panel); border:1px solid var(--border); border-left:3px solid var(--bad);
+    border-radius:12px; padding:12px 14px; margin-bottom:16px;
+    font-family:var(--display); font-weight:600; font-size:14px; letter-spacing:0.3px;
+    color:var(--text); text-transform:uppercase; line-height:1.35;
+  }
+
   /* ---------- Boot splash ---------- */
   #splash{
     position:fixed; inset:0; background:var(--bg); z-index:200;
@@ -476,6 +483,8 @@
       <div class="deload-banner cpat-banner" id="cpatBanner">
         <div class="db-text"><b id="cpatHeadline"></b> <span id="cpatDetail"></span></div>
       </div>
+
+      <div class="motivation-banner" id="motivationBanner"></div>
 
       <h2 class="section-title"><span>Vitals</span><span class="rule"></span></h2>
       <div class="vitals-toggle">
@@ -1675,6 +1684,58 @@
       : ('Test date: '+fmtDateLabel(cpatDate)+'. Keep stacking consistent training, sleep, and fuel.');
   }
 
+  // No-nonsense, one per day (same quote all day, rotates at midnight) —
+  // deliberately not encouraging/cute per how this board is meant to read.
+  var MOTIVATION_QUOTES = [
+    "Nobody's coming to save you. Get up and do the fucking work.",
+    "Excuses don't burn calories. Get your ass in gear.",
+    "You don't feel like it. Do it anyway.",
+    "Comfortable is how you fail the test. Get uncomfortable today.",
+    "Stop negotiating with yourself and go train.",
+    "The rack doesn't care how tired you are. Load it.",
+    "Nobody cares. Show up anyway.",
+    "You already know what you didn't do yesterday. Fix it today.",
+    "Suck it the fuck up. The clock on test day won't wait for you.",
+    "Motivation is for amateurs. Discipline gets you through the door.",
+    "You're not tired, you're soft. Go fix that.",
+    "Quit your bitching and go move something heavy.",
+    "Tomorrow's excuse is being written right now if you skip today.",
+    "The version of you that passes this test isn't sitting on the couch.",
+    "Nobody's grading effort. Results or nothing.",
+    "You want it easy? Wrong sport. Get moving.",
+    "Pain is temporary. Missing your number on test day isn't.",
+    "Stop waiting to feel ready. Ready is a myth. Go.",
+    "Every rep you skip, someone else isn't skipping.",
+    "This is the part where most people quit. Don't be most people.",
+    "You don't get to be tired. Get the hell up.",
+    "Talk less. Train more.",
+    "The scoreboard doesn't care about your excuses.",
+    "You signed up for this. Now do the damn work.",
+    "Weak effort today is a weak time on test day.",
+    "Nobody's going to carry you through the stair climb. Get strong.",
+    "Cut the whining and load the bar.",
+    "You either did the work or you didn't. There's no in-between.",
+    "Get comfortable being uncomfortable. That's the whole job.",
+    "Stop scrolling. Go train.",
+    "If it were easy, everyone would pass. Go make it happen.",
+    "Your future self is watching what you do right now. Don't embarrass them.",
+    "No one's impressed by almost. Finish the damn set.",
+    "You don't need permission to go hard today. Go.",
+    "The days you don't want to train are the ones that matter most.",
+    "Stop looking for a reason not to. Go find one to.",
+    "Soft reps build soft results. Push.",
+    "You're not out of time yet — but you're wasting it standing still.",
+    "Do the work nobody sees, so the results everyone sees.",
+    "Get up. Suit up. Show up. Quit making it complicated."
+  ];
+  function renderMotivationBanner(){
+    var d = new Date(todayStr()+'T00:00:00');
+    var start = new Date(d.getFullYear(), 0, 0);
+    var dayOfYear = Math.floor((d-start)/86400000);
+    var quote = MOTIVATION_QUOTES[dayOfYear % MOTIVATION_QUOTES.length];
+    document.getElementById('motivationBanner').textContent = quote;
+  }
+
   function renderDashboard(){
     var logs = sortedBodyLogs();
     var latest = logs[logs.length-1];
@@ -1687,6 +1748,7 @@
 
     renderModeChips();
     renderCpatBanner();
+    renderMotivationBanner();
 
     var compareTo = ui.vitalMode==='baseline' ? baseline : prev;
     var strip = document.getElementById('vitalsStrip');
